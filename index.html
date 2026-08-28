@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行手帐 · Trip Route &amp; Memories</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Caveat:wght@500;600;700&family=Ma+Shan+Zheng&family=Source+Sans+3:wght@400;500;600&display=swap');
+
+  :root {
+    /* aged kraft / handmade-paper palette (牛皮纸 · 康巴纸) */
+    --paper: #ddcb9f;
+    --paper-deep: #d2be8d;
+    --card: #eadcb8;
+    --border: #b9a06c;
+    --ink: #3a2d1a;
+    --muted: #7c6a4c;
+    --accent: #2b4f8e;        /* ink blue */
+    --accent-soft: #d8d4bd;
+    --terracotta: #b25a35;
+    --danger: #a63e2c;
+    --shadow: 0 6px 24px rgba(50, 35, 12, .22);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    /* the desk the journal lies on */
+    background:
+      radial-gradient(120% 90% at 50% 10%, rgba(255,235,200,.10), transparent 60%),
+      linear-gradient(135deg, #4d3a28, #33261a 55%, #241a11);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .hand { font-family: 'Caveat', 'Ma Shan Zheng', cursive; }
+
+  /* ============ The book ============ */
+  #book {
+    position: relative;
+    width: min(1220px, 97vw);
+    height: min(880px, 95vh);
+    perspective: 2600px;
+  }
+  .page {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    transform-origin: left center;
+    backface-visibility: hidden;
+    background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='240' height='240' filter='url(%23n)' opacity='0.07'/></svg>"),
+      radial-gradient(120% 90% at 18% 8%, rgba(255,244,208,.28), transparent 55%),
+      radial-gradient(100% 80% at 85% 92%, rgba(115,78,32,.16), transparent 60%),
+      radial-gradient(70% 60% at 60% 40%, rgba(255,240,198,.12), transparent 70%),
+      linear-gradient(105deg, rgba(105,75,35,.16), transparent 9%),
+      var(--paper);
+    border-radius: 6px 16px 16px 6px;
+    box-shadow:
+      0 30px 70px rgba(0,0,0,.55),
+      0 4px 14px rgba(0,0,0,.35),
+      inset 0 0 110px rgba(100,68,26,.28);
+    overflow: hidden;
+  }
+  .page.active { display: flex; z-index: 10; }
+  /* binding / stitching on the spine edge */
+  .page::before {
+    content: '';
+    position: absolute;
+    left: 13px; top: 14px; bottom: 14px;
+    width: 0;
+    border-left: 2px dashed rgba(120, 90, 50, .32);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .page > * { position: relative; z-index: 6; }
+
+  /* page-fold animation */
+  @keyframes foldOut { from { transform: rotateY(0deg); } to { transform: rotateY(-90deg); } }
+  @keyframes foldIn  { from { transform: rotateY(-90deg); } to { transform: rotateY(0deg); } }
+  .page.fold-out { animation: foldOut .5s cubic-bezier(.55,.05,.85,.4) forwards; }
+  .page.fold-in  { animation: foldIn  .5s cubic-bezier(.15,.6,.35,1) forwards; }
+  .page.turning { z-index: 40 !important; }
+  .page.turning::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    background: linear-gradient(to right, rgba(40,25,10,.28), rgba(40,25,10,.04) 45%, transparent 70%);
+    pointer-events: none;
+  }
+
+  button { font-family: inherit; color: var(--ink); }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 9px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .1s, box-shadow .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--accent-soft); transform: translateY(-1px); box-shadow: 0 3px 10px rgba(60,45,20,.14); }
+  .icon-btn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 9px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    transition: background .15s;
+  }
+  .icon-btn:hover { background: var(--accent-soft); }
+
+  /* ============ Cover page ============ */
+  #page-cover { align-items: center; justify-content: flex-start; }
+  .cover-inner {
+    width: min(660px, 88%);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 46px 0 28px;
+  }
+  .cover-title {
+    font-family: 'Ma Shan Zheng', 'Playfair Display', serif;
+    font-size: 54px;
+    font-weight: 400;
+    margin: 0;
+    text-align: center;
+    letter-spacing: .06em;
+  }
+  .cover-sub {
+    font-family: 'Caveat', cursive;
+    font-size: 21px;
+    color: var(--terracotta);
+    text-align: center;
+    margin: 2px 0 10px;
+  }
+  .cover-rule {
+    height: 0;
+    border-top: 2px solid rgba(120,90,50,.35);
+    border-bottom: 1px solid rgba(120,90,50,.2);
+    margin: 8px 0 20px;
+  }
+  #trip-entries { flex: 1; overflow-y: auto; padding: 2px 6px; }
+  .trip-entry {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 13px 10px;
+    border-bottom: 1px dashed rgba(120,90,50,.3);
+    cursor: pointer;
+    transition: background .15s, transform .12s;
+    border-radius: 6px;
+  }
+  .trip-entry:hover { background: rgba(255,246,222,.40); transform: translateX(4px); }
+  .trip-entry .te-thumb {
+    width: 58px; height: 58px;
+    object-fit: cover;
+    border: 3px solid #fff;
+    border-radius: 3px;
+    box-shadow: 0 3px 8px rgba(60,45,20,.3);
+    transform: rotate(-4deg);
+    flex-shrink: 0;
+    background: var(--paper-deep);
+  }
+  .trip-entry .te-thumb.placeholder {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    transform: rotate(3deg);
+  }
+  .trip-entry .te-info { flex: 1; min-width: 0; }
+  .trip-entry .te-name {
+    font-family: 'Caveat', 'Ma Shan Zheng', cursive;
+    font-size: 27px;
+    line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .trip-entry .te-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .trip-entry .te-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  .trip-entry:hover .te-actions { opacity: 1; }
+  .te-actions button {
+    border: none; background: none; cursor: pointer; font-size: 14px; padding: 4px;
+    border-radius: 6px;
+  }
+  .te-actions button:hover { background: rgba(255,255,255,.8); }
+  .cover-actions { display: flex; gap: 10px; justify-content: center; padding-top: 18px; }
+  .cover-note {
+    font-family: 'Caveat', cursive;
+    text-align: center;
+    color: var(--muted);
+    font-size: 16px;
+    margin: 14px 0 0;
+  }
+
+  /* ============ Trip page ============ */
+  #page-trip { padding: 20px 24px 16px 34px; gap: 12px; }
+  .trip-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #trip-summary {
+    font-family: 'Caveat', 'Ma Shan Zheng', cursive;
+    font-size: 19px;
+    color: var(--ink);
+    padding: 0 4px;
+    min-height: 24px;
+  }
+  #trip-summary:empty { display: none; }
+  #trip-title {
+    font-family: 'Caveat', 'Ma Shan Zheng', cursive;
+    font-size: 30px;
+    line-height: 1.1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #search-wrap { position: relative; margin-left: auto; width: min(320px, 34%); }
+  #search-input {
+    width: 100%;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--card);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 13.5px;
+  }
+  #search-input::placeholder { color: var(--muted); }
+  #search-results, #loc-results {
+    position: absolute;
+    top: 100%;
+    left: 0; right: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    margin-top: 4px;
+    max-height: 230px;
+    overflow-y: auto;
+    box-shadow: var(--shadow);
+    z-index: 2000;
+    display: none;
+  }
+  #search-results div, #loc-results div {
+    padding: 8px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    border-bottom: 1px dashed var(--border);
+  }
+  #search-results div:last-child, #loc-results div:last-child { border-bottom: none; }
+  #search-results div:hover, #loc-results div:hover { background: var(--accent-soft); }
+
+  .trip-body { flex: 1; display: flex; gap: 16px; min-height: 0; }
+  #map-frame {
+    flex: 1;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: inset 0 0 18px rgba(90,70,40,.22), 0 2px 8px rgba(60,45,20,.15);
+    background: #dcd3bf;
+  }
+  /* washi-tape corners holding the map down */
+  .tape {
+    position: absolute;
+    width: 92px; height: 26px;
+    background: rgba(226, 200, 140, .55);
+    box-shadow: 0 1px 4px rgba(60,45,20,.25);
+    z-index: 1200;
+    pointer-events: none;
+  }
+  .tape.tl { top: -8px; left: -26px; transform: rotate(-38deg); }
+  .tape.br { bottom: -8px; right: -26px; transform: rotate(-38deg); }
+  #map { position: absolute; inset: 0; }
+  .leaflet-tile-pane { filter: sepia(.42) saturate(.75) contrast(.93) brightness(1.0); }
+  #btn-animate {
+    position: absolute;
+    bottom: 12px; left: 12px;
+    z-index: 1300;
+    border: 1px solid var(--border);
+    background: rgba(236,223,184,.94);
+    border-radius: 9px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(60,45,20,.25);
+  }
+  #btn-animate:hover { background: var(--accent-soft); }
+
+  #stop-index {
+    width: 218px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .si-head {
+    font-family: 'Caveat', cursive;
+    font-size: 21px;
+    color: var(--terracotta);
+    margin-bottom: 6px;
+  }
+  #stop-list { flex: 1; overflow-y: auto; padding-right: 4px; }
+  .stop-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 1px 4px rgba(60,45,20,.08);
+    transition: transform .12s, box-shadow .15s;
+  }
+  .stop-item:hover { transform: translateX(3px); box-shadow: 0 3px 9px rgba(60,45,20,.14); }
+  .stop-item.drag-over { border-top: 3px solid var(--accent); }
+  .stop-item .num {
+    width: 23px; height: 23px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fdfaf2;
+    font-size: 11.5px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .stop-item .info { flex: 1; min-width: 0; }
+  .stop-item .info .t {
+    font-size: 13.5px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .stop-item .info .s { font-size: 11px; color: var(--muted); }
+  .stop-item .grip { color: var(--muted); cursor: grab; font-size: 14px; }
+  #empty-msg {
+    font-family: 'Caveat', cursive;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.5;
+    padding: 14px 6px;
+  }
+  .hint {
+    font-family: 'Caveat', cursive;
+    font-size: 16px;
+    color: var(--muted);
+    margin: 0;
+    text-align: center;
+  }
+
+  /* ============ Stop page ============ */
+  #page-stop { padding: 18px 26px 18px 36px; }
+  .stop-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+  .stop-head .num {
+    width: 27px; height: 27px;
+    border-radius: 50%;
+    background: var(--terracotta);
+    color: #fdfaf2;
+    font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stop-head .pos { font-family: 'Caveat', cursive; font-size: 18px; color: var(--muted); }
+  .stop-head .spacer { flex: 1; }
+  .stop-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px 10px 2px;
+  }
+  /* the corner mini-map: a quarter circle pinned to the top-right corner,
+     its arc fading into the paper; text flows along the curve (shape-outside) */
+  #minimap-wrap {
+    float: right;
+    width: 390px;
+    height: 330px;
+    margin: -4px -34px 10px 18px;   /* tuck into the page corner */
+    position: relative;
+    pointer-events: none;            /* let text under the faded corners stay editable */
+    shape-outside: circle(300px at 100% 0%);
+    shape-margin: 14px;
+  }
+  #minimap-mask {
+    position: absolute; inset: 0;
+    -webkit-mask-image: radial-gradient(circle 330px at 100% 0%,
+      #000 55%, rgba(0,0,0,.65) 72%, rgba(0,0,0,.25) 86%, transparent 97%);
+            mask-image: radial-gradient(circle 330px at 100% 0%,
+      #000 55%, rgba(0,0,0,.65) 72%, rgba(0,0,0,.25) 86%, transparent 97%);
+  }
+  /* a paper-colored halo over the fade ring only — corners stay transparent
+     so wrapped text is never painted over */
+  #minimap-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1250;
+    background: radial-gradient(circle 330px at 100% 0%,
+      rgba(221,203,159,0) 52%,
+      rgba(221,203,159,.45) 72%,
+      rgba(221,203,159,.92) 88%,
+      rgba(221,203,159,.95) 93%,
+      rgba(221,203,159,0) 97%);
+  }
+  #stop-minimap { position: absolute; inset: 0; background: transparent; }
+  .mini-credit {
+    position: absolute;
+    top: 6px; right: 40px;
+    font-size: 9.5px;
+    color: var(--muted);
+    z-index: 1300;
+    opacity: .8;
+  }
+  .mini-zoom {
+    position: absolute;
+    top: 28px; right: 48px;   /* the wrap tucks 34px past the page edge — keep buttons fully on-page */
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 1300;
+    pointer-events: auto;   /* the wrap itself ignores the mouse */
+  }
+  .mini-zoom button {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(236,223,184,.95);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ink);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(60,45,20,.25);
+  }
+  .mini-zoom button:hover { background: var(--accent-soft); }
+  .head-fields {
+    width: calc(100% - 400px);
+    min-width: 250px;
+  }
+  .stop-title-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: 'Caveat', 'Ma Shan Zheng', cursive;
+    font-size: 34px;
+    color: var(--ink);
+    border-bottom: 2px dashed rgba(120,90,50,.3);
+    padding: 0 2px 4px;
+    margin-bottom: 8px;
+  }
+  .stop-title-input::placeholder { color: rgba(141,130,113,.55); }
+  .date-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0 14px;
+  }
+  .date-row .lbl { font-family: 'Caveat', cursive; font-size: 17px; color: var(--terracotta); }
+  .date-row input {
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--ink);
+    border-bottom: 1px dashed rgba(120,90,50,.35);
+    padding: 2px 4px;
+    outline: none;
+  }
+  .date-row .arrow { font-family: 'Caveat', cursive; font-size: 19px; color: var(--terracotta); }
+  .loc-row #loc-coords { font-size: 13px; color: var(--muted); }
+  .loc-row .icon-btn { padding: 3px 8px; font-size: 12px; }
+  #loc-edit { margin: -6px 0 14px; }
+  #loc-search-wrap { position: relative; max-width: 440px; }
+  #loc-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--card);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 13.5px;
+  }
+  #ed-notes {
+    min-height: 168px;
+    border: none;
+    outline: none;
+    background:
+      repeating-linear-gradient(transparent, transparent 27px, rgba(110,80,40,.38) 27px, rgba(110,80,40,.38) 28px);
+    font-family: inherit;
+    font-size: 14.5px;
+    line-height: 28px;
+    color: var(--ink);
+    padding: 0 2px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    caret-color: var(--ink);
+  }
+  #ed-notes:empty::before {
+    content: attr(data-placeholder);
+    color: rgba(141,130,113,.6);
+    pointer-events: none;
+  }
+  .sec-label {
+    font-family: 'Caveat', cursive;
+    font-size: 19px;
+    color: var(--terracotta);
+    margin: 16px 0 8px;
+    clear: right;   /* keep the photos section below the corner map */
+  }
+  #drop-zone {
+    border: 2px dashed rgba(120,90,50,.32);
+    border-radius: 11px;
+    padding: 13px;
+    text-align: center;
+    color: var(--muted);
+    font-family: 'Caveat', cursive;
+    font-size: 17px;
+    cursor: pointer;
+    background: rgba(255,246,222,.28);
+    transition: border-color .15s, background .15s;
+  }
+  #drop-zone:hover, #drop-zone.dragging { border-color: var(--accent); background: var(--accent-soft); }
+  #media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .media-cell {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 2px;
+    background: #ddd;
+    cursor: pointer;
+    border: 5px solid #fff;
+    border-bottom-width: 16px;
+    box-shadow: 0 3px 10px rgba(60,45,20,.3);
+    transition: transform .15s;
+  }
+  .media-cell:nth-child(odd) { transform: rotate(-2deg); }
+  .media-cell:nth-child(even) { transform: rotate(1.7deg); }
+  .media-cell:hover { transform: rotate(0deg) scale(1.06); z-index: 5; }
+  .media-cell img, .media-cell video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .media-cell .vid-badge {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+    color: #fff;
+    background: rgba(0,0,0,.28);
+    pointer-events: none;
+  }
+  .media-cell .del {
+    position: absolute;
+    top: -12px; right: -12px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(45,40,35,.8);
+    color: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .link-row { display: flex; gap: 6px; }
+  .link-row input {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--card);
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+  #link-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .link-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,246,222,.35);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .link-chip a {
+    flex: 1;
+    color: var(--accent);
+    text-decoration: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .link-chip button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 13px; }
+  .btn-danger {
+    display: block;
+    margin: 22px auto 4px;
+    padding: 8px 22px;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    background: transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 13px;
+    clear: both;
+  }
+  .btn-danger:hover { background: #f8e9e4; }
+
+  .stop-marker {
+    background: var(--accent);
+    color: #fdfaf2;
+    border: 2.5px solid #fdf8ec;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    box-shadow: 0 2px 7px rgba(40,30,15,.45);
+  }
+  .stop-marker.selected { background: var(--terracotta); }
+  /* pill marker for a place visited more than once on the route */
+  .stop-marker-multi {
+    background: var(--accent);
+    color: #fdfaf2;
+    border: 2.5px solid #fdf8ec;
+    border-radius: 16px;
+    height: 30px;
+    padding: 0 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 700;
+    font-size: 12.5px;
+    white-space: nowrap;
+    box-shadow: 0 2px 7px rgba(40,30,15,.45);
+  }
+  .dup-popup { display: flex; flex-direction: column; gap: 6px; }
+  .dup-popup .dp-hint {
+    font-family: 'Caveat', cursive;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .dup-popup button {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-family: 'Source Sans 3', sans-serif;
+    font-size: 13px;
+    text-align: left;
+  }
+  .dup-popup button:hover { background: var(--accent-soft); }
+  /* kraft-toned Leaflet popups */
+  .leaflet-popup-content-wrapper {
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(40,28,10,.4);
+  }
+  .leaflet-popup-tip { background: var(--card); }
+  .stop-item .si-del {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 6px;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .stop-item:hover .si-del { opacity: 1; }
+  .stop-item .si-del:hover { color: var(--danger); background: rgba(213,90,70,.12); }
+
+  /* ---------- Lightbox ---------- */
+  #lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(24,20,15,.93);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 5000;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img, #lightbox video {
+    max-width: 90vw;
+    max-height: 84vh;
+    border: 8px solid #fdf8ec;
+    border-radius: 3px;
+    box-shadow: 0 12px 50px rgba(0,0,0,.6);
+  }
+  #lightbox .close {
+    position: absolute;
+    top: 14px; right: 18px;
+    font-size: 28px;
+    color: #fdf8ec;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(45,40,35,.9);
+    color: #fdf8ec;
+    padding: 9px 16px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    z-index: 6000;
+    display: none;
+    max-width: 80vw;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="book">
+
+  <!-- ============ COVER / INDEX PAGE ============ -->
+  <div class="page active" id="page-cover">
+    <div class="cover-inner">
+      <h1 class="cover-title">旅行手帐</h1>
+      <div class="cover-sub">Travel Journal — routes &amp; memories</div>
+      <div class="cover-rule"></div>
+      <div id="trip-entries"></div>
+      <div class="cover-actions">
+        <button class="btn" id="btn-cover-new">＋ New trip</button>
+        <button class="btn" id="btn-import">⬆ Import a trip</button>
+      </div>
+      <p class="cover-note" id="cover-quote"></p>
+    </div>
+  </div>
+
+  <!-- ============ TRIP / ROUTE PAGE ============ -->
+  <div class="page" id="page-trip">
+    <div class="trip-head">
+      <button class="icon-btn" id="btn-to-cover" title="Back to cover">⟵</button>
+      <span id="trip-title"></span>
+      <button class="icon-btn" id="btn-rename-trip" title="Rename trip">✏️</button>
+      <div id="search-wrap">
+        <input id="search-input" type="text" placeholder="🔍 Search a place to add…" autocomplete="off">
+        <div id="search-results"></div>
+      </div>
+      <button class="btn" id="btn-export">⬇ Export</button>
+    </div>
+    <div id="trip-summary"></div>
+    <div class="trip-body">
+      <div id="map-frame">
+        <div class="tape tl"></div>
+        <div class="tape br"></div>
+        <div id="map"></div>
+        <button id="btn-animate" title="Draw the route again">✒️ Draw route</button>
+      </div>
+      <div id="stop-index">
+        <div class="si-head">Stops on this trip</div>
+        <div id="stop-list"></div>
+        <div id="empty-msg" style="display:none">No stops yet — click the map to add your starting point 📍</div>
+      </div>
+    </div>
+    <p class="hint">click the map to add a stop · drag a marker to move it · click a marker or a stop to turn to its page</p>
+  </div>
+
+  <!-- ============ STOP / MEMORY PAGE ============ -->
+  <div class="page" id="page-stop">
+    <div class="stop-head">
+      <button class="icon-btn" id="btn-to-trip" title="Back to the route">⟵ Route</button>
+      <span class="num" id="ed-num">1</span>
+      <span class="pos" id="stop-pos"></span>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btn-prev-stop" title="Previous stop">←</button>
+      <button class="icon-btn" id="btn-next-stop" title="Next stop">→</button>
+    </div>
+    <div class="stop-body">
+      <div id="minimap-wrap">
+        <div id="minimap-mask"><div id="stop-minimap"></div></div>
+        <div class="mini-credit">© OpenStreetMap</div>
+        <div class="mini-zoom">
+          <button id="mini-zoom-in" title="Zoom in">＋</button>
+          <button id="mini-zoom-out" title="Zoom out">－</button>
+        </div>
+      </div>
+      <div class="head-fields">
+        <input type="text" id="ed-title" class="stop-title-input" placeholder="Name this place…">
+        <div class="date-row">
+          <span class="lbl">dates</span>
+          <input type="date" id="ed-date" title="Arrival / start date">
+          <span class="arrow">→</span>
+          <input type="date" id="ed-date-end" title="Departure / end date (optional)">
+        </div>
+        <div class="date-row loc-row">
+          <span class="lbl">location</span>
+          <span id="loc-coords"></span>
+          <button class="icon-btn" id="btn-change-loc" title="Change this stop's location">✎ change</button>
+        </div>
+        <div id="loc-edit" style="display:none">
+          <div id="loc-search-wrap">
+            <input type="text" id="loc-input" placeholder="Search a place, or paste “lat, lng” — Enter to apply" autocomplete="off">
+            <div id="loc-results"></div>
+          </div>
+        </div>
+      </div>
+      <div id="ed-notes" contenteditable="true" data-placeholder="What happened here? What do you want to remember?"></div>
+      <div class="sec-label">photos &amp; videos</div>
+      <div id="drop-zone">📷 Click or drop photos / videos here</div>
+      <input type="file" id="file-input" accept="image/*,video/*" multiple style="display:none">
+      <div id="media-grid"></div>
+      <div class="sec-label">media links (Google Photos, YouTube…)</div>
+      <div class="link-row">
+        <input type="text" id="link-input" placeholder="https://…">
+        <button class="icon-btn" id="btn-add-link">Add</button>
+      </div>
+      <div id="link-list"></div>
+      <button class="btn-danger" id="btn-delete-stop">Delete this stop</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="lightbox">
+  <button class="close" title="Close">✕</button>
+  <div id="lightbox-content"></div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="import-input" accept=".json,application/json" style="display:none">
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+
+/* ============================== IndexedDB ============================== */
+const DB_NAME = 'trip-memories';
+const DB_VERSION = 1;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('trips')) d.createObjectStore('trips', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('stops')) {
+        const s = d.createObjectStore('stops', { keyPath: 'id' });
+        s.createIndex('tripId', 'tripId');
+      }
+      if (!d.objectStoreNames.contains('media')) {
+        const m = d.createObjectStore('media', { keyPath: 'id' });
+        m.createIndex('stopId', 'stopId');
+      }
+      if (!d.objectStoreNames.contains('routes')) d.createObjectStore('routes', { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idb(storeName, mode, fn) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
+    const result = fn(store);
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+const dbPut = (store, val) => idb(store, 'readwrite', s => s.put(val));
+const dbDel = (store, key) => idb(store, 'readwrite', s => s.delete(key));
+function dbGet(store, key) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store).objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbAll(store) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store).objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbAllByIndex(store, indexName, value) {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(store).objectStore(store).index(indexName).getAll(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const uid = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+const $ = id => document.getElementById(id);
+
+/* ============================== State ============================== */
+let currentTrip = null;
+let stops = [];
+let markers = new Map();
+let routeLayer = null;
+let selectedStopId = null;
+let currentStopIndex = -1;
+let mediaURLs = new Map();
+let activePage = 'page-cover';
+let turning = false;
+
+/* ============================== Page turning ============================== */
+function animateClass(el, cls) {
+  return new Promise(res => {
+    const h = () => { el.classList.remove('turning', cls); el.removeEventListener('animationend', h); res(); };
+    el.addEventListener('animationend', h);
+    el.classList.add('turning', cls);
+  });
+}
+
+async function showPage(id, dir = 'forward') {
+  if (turning || id === activePage) return;
+  turning = true;
+  const oldEl = $(activePage), newEl = $(id);
+  if (dir === 'forward') {
+    newEl.classList.add('active');            // revealed beneath
+    await animateClass(oldEl, 'fold-out');    // old page folds away over the spine
+    oldEl.classList.remove('active');
+  } else {
+    newEl.classList.add('active');
+    await animateClass(newEl, 'fold-in');     // page folds back down on top
+    oldEl.classList.remove('active');
+  }
+  activePage = id;
+  turning = false;
+}
+
+/* ============================== Map ============================== */
+const map = L.map('map', { zoomControl: true }).setView([20, 0], 2);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+
+map.on('click', (e) => {
+  if (activePage !== 'page-trip' || turning) return;
+  const ll = e.latlng;
+  if (!confirm(`Add a new stop here (${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)})?`)) return;
+  addStop(ll.lat, ll.lng, '');
+});
+
+let miniMap = null, miniMarker = null, miniZoom = 13;
+
+/* keep the current stop in the clear top-right zone of the quarter-circle,
+   away from the faded arc, at whatever zoom level */
+function setMiniView() {
+  const s = stops[currentStopIndex];
+  if (!miniMap || !s) return;
+  const size = miniMap.getSize();
+  const c = miniMap.project([s.lat, s.lng], miniZoom).add([-0.20 * size.x, 0.20 * size.y]);
+  miniMap.setView(miniMap.unproject(c, miniZoom), miniZoom, { animate: false });
+}
+
+function ensureMiniMap() {
+  if (miniMap) return;
+  miniMap = L.map('stop-minimap', {
+    zoomControl: false, attributionControl: false,
+    dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
+    boxZoom: false, keyboard: false, touchZoom: false
+  });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(miniMap);
+}
+
+/* ============================== Toast ============================== */
+let toastTimer = null;
+function toast(msg, ms = 2600) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.style.display = 'none', ms);
+}
+
+/* ============================== Dates ============================== */
+function fmtDate(d) {
+  try {
+    return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return d; }
+}
+function fmtDateRange(stop) {
+  const a = stop.date, b = stop.dateEnd;
+  if (a && b && b !== a) return `${fmtDate(a)} – ${fmtDate(b)}`;
+  if (a) return fmtDate(a);
+  if (b) return fmtDate(b);
+  return '';
+}
+
+function getMediaURL(media, thumb = false) {
+  const key = media.id + (thumb && media.thumbnailBlob ? ':t' : '');
+  if (!mediaURLs.has(key)) {
+    const blob = (thumb && media.thumbnailBlob) ? media.thumbnailBlob : media.blob;
+    mediaURLs.set(key, URL.createObjectURL(blob));
+  }
+  return mediaURLs.get(key);
+}
+
+/* ============================== Cover page ============================== */
+const QUOTES = [
+  { t: 'The world is a book, and those who do not travel read only one page.', a: 'St. Augustine' },
+  { t: 'Not all those who wander are lost.', a: 'J.R.R. Tolkien' },
+  { t: 'To travel is to live.', a: 'Hans Christian Andersen' },
+  { t: 'Life is either a daring adventure or nothing at all.', a: 'Helen Keller' },
+  { t: 'A good traveler has no fixed plans and is not intent on arriving.', a: 'Lao Tzu' },
+  { t: 'Wherever you go becomes a part of you somehow.', a: 'Anita Desai' },
+  { t: 'We travel not to escape life, but for life not to escape us.', a: 'anonymous' },
+  { t: '读万卷书，行万里路。', a: '董其昌' },
+  { t: '千里之行，始于足下。', a: '老子' },
+  { t: '身体和灵魂，总有一个要在路上。', a: '佚名' },
+  { t: 'The journey itself is my home.', a: 'Matsuo Bashō' },
+  { t: 'Collect moments, not things.', a: 'anonymous' }
+];
+
+async function renderCover() {
+  const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+  $('cover-quote').textContent = `“${q.t}” — ${q.a}`;
+  const trips = (await dbAll('trips')).sort((a, b) => a.createdAt - b.createdAt);
+  const wrap = $('trip-entries');
+  wrap.innerHTML = '';
+  for (const t of trips) {
+    const tripStops = await dbAllByIndex('stops', 'tripId', t.id);
+    const order = new Map((t.stopOrder || []).map((id, i) => [id, i]));
+    tripStops.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+
+    const entry = document.createElement('div');
+    entry.className = 'trip-entry';
+
+    // first photo of the trip as its cover polaroid
+    let thumbEl = null;
+    for (const s of tripStops) {
+      if (s.mediaIds && s.mediaIds.length) {
+        const m = await dbGet('media', s.mediaIds[0]);
+        if (m) {
+          thumbEl = document.createElement('img');
+          thumbEl.className = 'te-thumb';
+          thumbEl.src = getMediaURL(m, true);
+          break;
+        }
+      }
+    }
+    if (!thumbEl) {
+      thumbEl = document.createElement('div');
+      thumbEl.className = 'te-thumb placeholder';
+      thumbEl.textContent = '🧭';
+    }
+
+    const info = document.createElement('div');
+    info.className = 'te-info';
+    const name = document.createElement('div');
+    name.className = 'te-name';
+    name.textContent = t.name;
+    const meta = document.createElement('div');
+    meta.className = 'te-meta';
+    const dates = tripStops.flatMap(s => [s.date, s.dateEnd]).filter(Boolean).sort();
+    const bits = [`${tripStops.length} stop${tripStops.length === 1 ? '' : 's'}`];
+    if (dates.length) {
+      const range = dates[0] === dates[dates.length - 1]
+        ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}`;
+      bits.push(range);
+    }
+    meta.textContent = bits.join(' · ');
+    info.append(name, meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'te-actions';
+    const ren = document.createElement('button');
+    ren.textContent = '✏️'; ren.title = 'Rename';
+    ren.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const nn = prompt('Rename trip:', t.name);
+      if (!nn) return;
+      t.name = nn;
+      await dbPut('trips', t);
+      renderCover();
+    });
+    const del = document.createElement('button');
+    del.textContent = '🗑️'; del.title = 'Delete trip';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete trip "${t.name}" and all its stops and media? This cannot be undone.`)) return;
+      for (const s of tripStops) {
+        for (const mid of s.mediaIds) await dbDel('media', mid);
+        await dbDel('stops', s.id);
+      }
+      await dbDel('trips', t.id);
+      renderCover();
+    });
+    actions.append(ren, del);
+
+    entry.append(thumbEl, info, actions);
+    entry.addEventListener('click', () => openTrip(t.id));
+    wrap.appendChild(entry);
+  }
+  if (!trips.length) {
+    const p = document.createElement('div');
+    p.id = 'empty-cover';
+    p.style.cssText = 'text-align:center;padding:40px 10px;';
+    p.className = 'hand';
+    p.style.fontSize = '20px';
+    p.style.color = 'var(--muted)';
+    p.textContent = 'A blank journal… start your first trip below ✈️';
+    wrap.appendChild(p);
+  }
+}
+
+$('btn-cover-new').addEventListener('click', async () => {
+  const name = prompt('Name for the new trip:', 'New Trip');
+  if (!name) return;
+  const t = { id: uid(), name, createdAt: Date.now(), stopOrder: [] };
+  await dbPut('trips', t);
+  await renderCover();
+  openTrip(t.id);
+});
+
+/* ============================== Trip page ============================== */
+async function openTrip(tripId) {
+  currentTrip = await dbGet('trips', tripId);
+  const all = await dbAllByIndex('stops', 'tripId', tripId);
+  const byId = new Map(all.map(s => [s.id, s]));
+  stops = (currentTrip.stopOrder || []).map(id => byId.get(id)).filter(Boolean);
+  for (const s of all) if (!currentTrip.stopOrder.includes(s.id)) stops.push(s);
+
+  $('trip-title').textContent = currentTrip.name;
+  renderMarkers();
+  await renderStopIndex();
+  updateTripSummary();
+
+  await showPage('page-trip', 'forward');
+  map.invalidateSize();
+  if (stops.length >= 2) {
+    animateRoute();               // swift ink-drawing of the whole route
+  } else {
+    fitToStops();
+    drawRoute();
+  }
+}
+
+function fitToStops() {
+  if (stops.length === 0) { map.setView([20, 0], 2); return; }
+  if (stops.length === 1) { map.setView([stops[0].lat, stops[0].lng], 12); return; }
+  map.fitBounds(L.latLngBounds(stops.map(s => [s.lat, s.lng])), { padding: [50, 50] });
+}
+
+async function saveTrip() { await dbPut('trips', currentTrip); }
+
+$('btn-to-cover').addEventListener('click', goCover);
+async function goCover() {
+  cancelRouteAnimation();
+  await renderCover();
+  await showPage('page-cover', 'back');
+}
+
+$('btn-rename-trip').addEventListener('click', async () => {
+  const name = prompt('Rename trip:', currentTrip.name);
+  if (!name) return;
+  currentTrip.name = name;
+  await saveTrip();
+  $('trip-title').textContent = name;
+});
+
+/* ============================== Stops ============================== */
+async function addStop(lat, lng, title) {
+  const stop = {
+    id: uid(), tripId: currentTrip.id,
+    lat, lng,
+    title: title || '', date: '', dateEnd: '', notes: '',
+    mediaIds: [], links: []
+  };
+  await dbPut('stops', stop);
+  stops.push(stop);
+  currentTrip.stopOrder = stops.map(s => s.id);
+  await saveTrip();
+  await renderAll();
+  toast(`Stop ${stops.length} added — click its marker to write ✍️`);
+}
+
+async function saveStop(stop) { await dbPut('stops', stop); }
+
+async function deleteStop(stopId) {
+  const stop = stops.find(s => s.id === stopId);
+  if (!stop) return;
+  if (!confirm(`Delete stop ${stops.indexOf(stop) + 1}${stop.title ? ' — ' + stop.title : ''}? Its photos/videos will be removed too.`)) return;
+  for (const mid of stop.mediaIds) await dbDel('media', mid);
+  await dbDel('stops', stopId);
+  stops = stops.filter(s => s.id !== stopId);
+  currentTrip.stopOrder = stops.map(s => s.id);
+  await saveTrip();
+  selectedStopId = null;
+  await showPage('page-trip', 'back');
+  map.invalidateSize();
+  await renderAll();
+}
+
+async function moveStop(fromIdx, toIdx) {
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+  const [s] = stops.splice(fromIdx, 1);
+  stops.splice(toIdx, 0, s);
+  currentTrip.stopOrder = stops.map(x => x.id);
+  await saveTrip();
+  await renderAll();
+}
+
+/* ============================== Trip summary ============================== */
+let summaryToken = 0;
+async function updateTripSummary() {
+  const el = $('trip-summary');
+  const token = ++summaryToken;
+  if (!currentTrip || stops.length === 0) { el.textContent = ''; return; }
+
+  // days covered, from the stops' date ranges
+  const dates = stops.flatMap(s => [s.date, s.dateEnd]).filter(Boolean).sort();
+  let daysTxt = '';
+  if (dates.length) {
+    const days = Math.round(
+      (new Date(dates[dates.length - 1] + 'T00:00:00') - new Date(dates[0] + 'T00:00:00')) / 86400000
+    ) + 1;
+    daysTxt = `📅 ${days} ${days === 1 ? 'day' : 'days'}`;
+  }
+
+  const render = (kmTxt, placeTxt) => {
+    if (token !== summaryToken) return;
+    el.textContent = [kmTxt, daysTxt, placeTxt].filter(Boolean).join('   ·   ');
+  };
+  render('🛣 …', '');
+
+  // total mileage along the drawn route (roads where routed, straight for flights)
+  let km = 0;
+  if (stops.length >= 2) {
+    for (let i = 0; i < stops.length - 1; i++) {
+      const leg = await getLeg(stops[i], stops[i + 1]);
+      if (token !== summaryToken) return;
+      for (let j = 1; j < leg.coords.length; j++) {
+        km += haversineKm(
+          { lat: leg.coords[j - 1][0], lng: leg.coords[j - 1][1] },
+          { lat: leg.coords[j][0], lng: leg.coords[j][1] }
+        );
+      }
+    }
+  }
+  const kmTxt = `🛣 ${Math.round(km).toLocaleString()} km`;
+  render(kmTxt, '');
+
+  // countries & cities of the stops — reverse-geocoded once, cached on each stop
+  for (const s of stops) {
+    if (s.place) continue;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${s.lat}&lon=${s.lng}&zoom=10&accept-language=en`);
+      const j = await res.json();
+      // stale run or stop deleted meanwhile → never write it back to the DB
+      if (token !== summaryToken || !stops.includes(s)) return;
+      const a = j.address || {};
+      s.place = {
+        country: a.country || '',
+        city: a.city || a.town || a.village || a.municipality || a.county || a.state_district || a.state || ''
+      };
+      await saveStop(s);
+    } catch { /* offline — retried on next trip open */ }
+    if (token !== summaryToken) return;
+    await new Promise(r => setTimeout(r, 350)); // be polite to Nominatim
+  }
+  const countries = new Set(stops.map(s => s.place && s.place.country).filter(Boolean));
+  const cities = new Set(stops.map(s => s.place && s.place.city).filter(Boolean));
+  let placeTxt = '';
+  if (countries.size) {
+    placeTxt = `🌍 ${countries.size} ${countries.size === 1 ? 'country' : 'countries'}` +
+      `   ·   🏙 ${cities.size} ${cities.size === 1 ? 'city' : 'cities'}`;
+  }
+  render(kmTxt, placeTxt);
+}
+
+/* ============================== Rendering ============================== */
+async function renderAll() {
+  renderMarkers();
+  await renderStopIndex();
+  drawRoute();
+  updateTripSummary();
+}
+
+function makeIcon(num, selected) {
+  const size = 30;
+  return L.divIcon({
+    className: '',
+    html: `<div class="stop-marker${selected ? ' selected' : ''}" style="width:${size}px;height:${size}px">${num}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2]
+  });
+}
+
+function renderMarkers() {
+  for (const m of new Set(markers.values())) m.remove();
+  markers.clear();
+
+  // group stops that sit on the same spot (~11 m) so repeat visits stay selectable
+  const groups = new Map();
+  stops.forEach((s, i) => {
+    const k = s.lat.toFixed(4) + ',' + s.lng.toFixed(4);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  });
+
+  for (const idxs of groups.values()) {
+    if (idxs.length === 1) {
+      const i = idxs[0], s = stops[i];
+      const m = L.marker([s.lat, s.lng], { icon: makeIcon(i + 1, false), draggable: true }).addTo(map);
+      m.on('click', () => openStop(stops.indexOf(s), 'forward'));
+      m.on('dragend', async () => {
+        const ll = m.getLatLng();
+        if (!confirm(`Move stop ${stops.indexOf(s) + 1}${s.title ? ' — ' + s.title : ''} to (${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)})?`)) {
+          m.setLatLng([s.lat, s.lng]);   // snap back — it was an accidental drag
+          return;
+        }
+        s.lat = ll.lat; s.lng = ll.lng;
+        s.place = null;   // location changed → re-geocode for the summary
+        await saveStop(s);
+        await renderAll();
+      });
+      markers.set(s.id, m);
+    } else {
+      // one pill marker showing every visit number; click → pick which one to open
+      const first = stops[idxs[0]];
+      const label = idxs.map(i => i + 1).join(' · ');
+      const w = 26 + label.length * 7;
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="stop-marker-multi">${label}</div>`,
+        iconSize: [w, 30],
+        iconAnchor: [w / 2, 15]
+      });
+      const m = L.marker([first.lat, first.lng], { icon, draggable: false }).addTo(map);
+      const pop = document.createElement('div');
+      pop.className = 'dup-popup';
+      const hint = document.createElement('div');
+      hint.className = 'dp-hint';
+      hint.textContent = 'visited more than once — open which?';
+      pop.appendChild(hint);
+      for (const i of idxs) {
+        const st = stops[i];
+        const b = document.createElement('button');
+        b.textContent = `${i + 1} · ${st.title || 'Stop ' + (i + 1)}${st.date ? ' — ' + fmtDate(st.date) : ''}`;
+        b.addEventListener('click', () => { map.closePopup(); openStop(i, 'forward'); });
+        pop.appendChild(b);
+      }
+      m.bindPopup(pop, { closeButton: false });
+      for (const i of idxs) markers.set(stops[i].id, m);
+    }
+  }
+}
+
+async function renderStopIndex() {
+  const list = $('stop-list');
+  const empty = $('empty-msg');
+  list.innerHTML = '';
+  empty.style.display = stops.length ? 'none' : 'block';
+
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i];
+    const item = document.createElement('div');
+    item.className = 'stop-item';
+    item.draggable = true;
+
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = i + 1;
+
+    const info = document.createElement('div');
+    info.className = 'info';
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = s.title || `Stop ${i + 1}`;
+    const sub = document.createElement('div');
+    sub.className = 's';
+    const bits = [];
+    const dr = fmtDateRange(s);
+    if (dr) bits.push(dr);
+    if (s.mediaIds.length) bits.push(`${s.mediaIds.length} 📷`);
+    if (s.notes) bits.push('📝');
+    sub.textContent = bits.join(' · ') || `${s.lat.toFixed(2)}, ${s.lng.toFixed(2)}`;
+    info.append(t, sub);
+
+    const del = document.createElement('button');
+    del.className = 'si-del';
+    del.textContent = '✕';
+    del.title = 'Delete this stop';
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteStop(s.id); });
+
+    const grip = document.createElement('span');
+    grip.className = 'grip';
+    grip.textContent = '⠿';
+
+    item.append(num, info, del, grip);
+    item.addEventListener('click', () => openStop(i, 'forward'));
+
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', String(i));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragover', (e) => { e.preventDefault(); item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+      await moveStop(from, i);
+    });
+
+    list.appendChild(item);
+  }
+}
+
+/* ============================== Routing ============================== */
+const MAX_DRIVE_KM = 3000;
+const ROUTE_COLOR = '#2456a6';
+const FLIGHT_COLOR = '#8a7f9e';
+
+function haversineKm(a, b) {
+  const R = 6371, d2r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * d2r, dLng = (b.lng - a.lng) * d2r;
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * d2r) * Math.cos(b.lat * d2r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function legKey(a, b) {
+  const f = n => n.toFixed(5);
+  return `${f(a.lat)},${f(a.lng)}|${f(b.lat)},${f(b.lng)}`;
+}
+
+async function getLeg(a, b) {
+  const straight = [[a.lat, a.lng], [b.lat, b.lng]];
+  const key = legKey(a, b);
+  const cached = await dbGet('routes', key);
+  if (cached) return cached;
+
+  let leg;
+  if (haversineKm(a, b) > MAX_DRIVE_KM) {
+    leg = { key, mode: 'direct', coords: straight };
+  } else {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const json = await res.json();
+      // a route only counts if it truly reaches both stops — OSRM otherwise snaps
+      // the endpoint to the nearest routable road, which can be hundreds of km off
+      const snappedClose = (json.waypoints || []).every(w => (w.distance || 0) < 10000);
+      if (json.code === 'Ok' && json.routes && json.routes[0] && snappedClose) {
+        leg = { key, mode: 'road', coords: json.routes[0].geometry.coordinates.map(c => [c[1], c[0]]) };
+      } else {
+        leg = { key, mode: 'direct', coords: straight };
+      }
+    } catch {
+      return { key, mode: 'direct', coords: straight, nocache: true };
+    }
+  }
+  await dbPut('routes', leg);
+  return leg;
+}
+
+let routeDrawToken = 0;
+async function drawRoute() {
+  const token = ++routeDrawToken;
+  if (routeLayer) { routeLayer.remove(); routeLayer = null; }
+  if (stops.length < 2) return;
+  const layer = L.layerGroup().addTo(map);
+  routeLayer = layer;
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const leg = await getLeg(stops[i], stops[i + 1]);
+    if (token !== routeDrawToken) { layer.remove(); return; }
+    const style = leg.mode === 'road'
+      ? { color: ROUTE_COLOR, weight: 4, opacity: .85, lineJoin: 'round' }
+      : { color: FLIGHT_COLOR, weight: 3, opacity: .8, dashArray: '8 8' };
+    L.polyline(leg.coords, style).addTo(layer);
+  }
+}
+
+/* ============================== Route drawing animation ============================== */
+let animLayer = null;
+let animRaf = null;
+
+function cancelRouteAnimation() {
+  if (animRaf) cancelAnimationFrame(animRaf);
+  animRaf = null;
+  if (animLayer) { animLayer.remove(); animLayer = null; }
+}
+
+async function animateRoute() {
+  if (activePage !== 'page-trip' && !turning) return;
+  if (stops.length < 2) { toast('Add at least two stops first'); return; }
+  cancelRouteAnimation();
+
+  // Fix the view so the whole trip is visible, then keep the camera still.
+  fitToStops();
+  await new Promise(r => setTimeout(r, 400));
+
+  const path = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const leg = await getLeg(stops[i], stops[i + 1]);
+    for (const c of leg.coords) {
+      const last = path[path.length - 1];
+      if (!last || last[0] !== c[0] || last[1] !== c[1]) path.push(c);
+    }
+  }
+  if (path.length < 2) return;
+
+  const cum = [0];
+  for (let i = 1; i < path.length; i++) {
+    cum.push(cum[i - 1] + haversineKm(
+      { lat: path[i - 1][0], lng: path[i - 1][1] },
+      { lat: path[i][0], lng: path[i][1] }
+    ));
+  }
+  const total = cum[cum.length - 1] || 1;
+
+  routeDrawToken++;
+  if (routeLayer) { routeLayer.remove(); routeLayer = null; }
+
+  animLayer = L.layerGroup().addTo(map);
+  const line = L.polyline([path[0]], {
+    color: ROUTE_COLOR, weight: 5, opacity: .92, lineJoin: 'round', lineCap: 'round'
+  }).addTo(animLayer);
+  const tip = L.circleMarker(path[0], {
+    radius: 7, color: '#fdf8ec', weight: 2.5, fillColor: ROUTE_COLOR, fillOpacity: 1
+  }).addTo(animLayer);
+
+  // swift: a page-turn beat, not a screensaver
+  const duration = Math.min(6000, 1500 + stops.length * 600);
+  const t0 = performance.now();
+  let j = 0;
+
+  return new Promise(resolve => {
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / duration);
+      const eased = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      const dist = eased * total;
+      while (j < path.length - 2 && cum[j + 1] < dist) j++;
+      const segLen = cum[j + 1] - cum[j] || 1e-9;
+      const f = Math.max(0, Math.min(1, (dist - cum[j]) / segLen));
+      const interp = [
+        path[j][0] + (path[j + 1][0] - path[j][0]) * f,
+        path[j][1] + (path[j + 1][1] - path[j][1]) * f
+      ];
+      line.setLatLngs(path.slice(0, j + 1).concat([interp]));
+      tip.setLatLng(interp);
+      if (p < 1) {
+        animRaf = requestAnimationFrame(frame);
+      } else {
+        animRaf = null;
+        setTimeout(() => { cancelRouteAnimation(); drawRoute(); resolve(); }, 700);
+      }
+    }
+    animRaf = requestAnimationFrame(frame);
+  });
+}
+
+$('btn-animate').addEventListener('click', animateRoute);
+
+/* ============================== Stop page ============================== */
+function populateStop(i) {
+  currentStopIndex = i;
+  const s = stops[i];
+  selectedStopId = s.id;
+  document.querySelector('.stop-body').scrollTop = 0;
+  $('ed-num').textContent = i + 1;
+  $('stop-pos').textContent = `stop ${i + 1} of ${stops.length}`;
+  $('ed-title').value = s.title;
+  $('ed-date').value = s.date || '';
+  $('ed-date-end').value = s.dateEnd || '';
+  $('loc-coords').textContent = fmtCoords(s);
+  $('loc-edit').style.display = 'none';
+  $('loc-results').style.display = 'none';
+  $('ed-notes').innerText = s.notes || '';
+  renderMediaGrid(s);
+  renderLinks(s);
+  $('btn-prev-stop').disabled = i === 0;
+  $('btn-next-stop').disabled = i === stops.length - 1;
+  $('btn-prev-stop').style.opacity = i === 0 ? .4 : 1;
+  $('btn-next-stop').style.opacity = i === stops.length - 1 ? .4 : 1;
+
+  ensureMiniMap();
+  miniZoom = 13;
+  setTimeout(() => {
+    miniMap.invalidateSize();
+    setMiniView();
+    if (miniMarker) miniMarker.remove();
+    miniMarker = L.marker([s.lat, s.lng], { icon: makeIcon(i + 1, true), interactive: false }).addTo(miniMap);
+  }, 90);
+}
+
+async function openStop(i, dir = 'forward') {
+  if (i < 0 || i >= stops.length || turning) return;
+  if (activePage === 'page-stop') {
+    // flip within the stop section: lift the page, swap the contents, lay it back down
+    turning = true;
+    const el = $('page-stop');
+    await animateClass(el, 'fold-out');
+    populateStop(i);
+    await animateClass(el, 'fold-in');
+    turning = false;
+  } else {
+    populateStop(i);
+    await showPage('page-stop', dir);
+  }
+}
+
+$('btn-to-trip').addEventListener('click', backToTrip);
+async function backToTrip() {
+  await renderStopIndex();          // titles/dates may have been edited
+  renderMarkers();
+  updateTripSummary();
+  await showPage('page-trip', 'back');
+  map.invalidateSize();
+  if (!routeLayer && !animLayer) drawRoute();
+}
+
+$('btn-prev-stop').addEventListener('click', () => openStop(currentStopIndex - 1, 'back'));
+$('btn-next-stop').addEventListener('click', () => openStop(currentStopIndex + 1, 'forward'));
+$('mini-zoom-in').addEventListener('click', () => { miniZoom = Math.min(18, miniZoom + 1); setMiniView(); });
+$('mini-zoom-out').addEventListener('click', () => { miniZoom = Math.max(3, miniZoom - 1); setMiniView(); });
+
+/* ---------- Change a stop's location from its page ---------- */
+function fmtCoords(s) { return s.lat.toFixed(5) + ', ' + s.lng.toFixed(5); }
+const LATLNG_RE = /^(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)$/;
+
+$('btn-change-loc').addEventListener('click', () => {
+  const ed = $('loc-edit');
+  const show = ed.style.display === 'none';
+  ed.style.display = show ? 'block' : 'none';
+  $('loc-results').style.display = 'none';
+  if (show) { $('loc-input').value = ''; $('loc-input').focus(); }
+});
+
+async function applyNewLocation(lat, lng) {
+  const s = stops[currentStopIndex];
+  if (!s || !isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    toast('That doesn\'t look like a valid location');
+    return;
+  }
+  s.lat = lat; s.lng = lng;
+  s.place = null;                       // re-geocode for the trip summary
+  await saveStop(s);
+  $('loc-coords').textContent = fmtCoords(s);
+  $('loc-edit').style.display = 'none';
+  $('loc-results').style.display = 'none';
+  setMiniView();
+  if (miniMarker) miniMarker.setLatLng([lat, lng]);
+  renderMarkers();
+  drawRoute();
+  updateTripSummary();
+  toast('Location updated ✓');
+}
+
+let locDebounce = null;
+$('loc-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const m = $('loc-input').value.trim().match(LATLNG_RE);
+    if (m) applyNewLocation(parseFloat(m[1]), parseFloat(m[2]));
+  }
+  if (e.key === 'Escape') { $('loc-edit').style.display = 'none'; $('loc-results').style.display = 'none'; }
+});
+$('loc-input').addEventListener('input', () => {
+  clearTimeout(locDebounce);
+  const q = $('loc-input').value.trim();
+  const box = $('loc-results');
+  if (q.length < 3 || LATLNG_RE.test(q)) { box.style.display = 'none'; return; }
+  locDebounce = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`);
+      const results = await res.json();
+      box.innerHTML = '';
+      if (!results.length) { box.style.display = 'none'; return; }
+      for (const r of results) {
+        const row = document.createElement('div');
+        row.textContent = r.display_name;
+        row.addEventListener('click', () => applyNewLocation(parseFloat(r.lat), parseFloat(r.lon)));
+        box.appendChild(row);
+      }
+      box.style.display = 'block';
+    } catch { /* search failed silently */ }
+  }, 500);
+});
+$('btn-delete-stop').addEventListener('click', () => deleteStop(selectedStopId));
+
+let saveDebounce = null;
+function bindAutoSave(inputId, field) {
+  const el = $(inputId);
+  el.addEventListener('input', () => {
+    const s = stops.find(x => x.id === selectedStopId);
+    if (!s) return;
+    s[field] = el.isContentEditable ? el.innerText : el.value;
+    clearTimeout(saveDebounce);
+    saveDebounce = setTimeout(() => saveStop(s), 400);
+  });
+}
+bindAutoSave('ed-title', 'title');
+bindAutoSave('ed-date', 'date');
+bindAutoSave('ed-date-end', 'dateEnd');
+bindAutoSave('ed-notes', 'notes');
+
+/* ---------- Media ---------- */
+const MAX_FILE_MB = 80;
+
+$('drop-zone').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', (e) => { addMediaFiles(e.target.files); e.target.value = ''; });
+$('drop-zone').addEventListener('dragover', (e) => { e.preventDefault(); $('drop-zone').classList.add('dragging'); });
+$('drop-zone').addEventListener('dragleave', () => $('drop-zone').classList.remove('dragging'));
+$('drop-zone').addEventListener('drop', (e) => {
+  e.preventDefault();
+  $('drop-zone').classList.remove('dragging');
+  addMediaFiles(e.dataTransfer.files);
+});
+
+async function addMediaFiles(files) {
+  const s = stops.find(x => x.id === selectedStopId);
+  if (!s) return;
+  for (const file of files) {
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    if (!isImage && !isVideo) { toast(`Skipped ${file.name}: not an image or video`); continue; }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      toast(`${file.name} is over ${MAX_FILE_MB}MB — consider adding it as a link instead`);
+      continue;
+    }
+    const media = {
+      id: uid(), stopId: s.id,
+      type: isImage ? 'image' : 'video',
+      name: file.name,
+      blob: file,
+      thumbnailBlob: null
+    };
+    if (isImage) media.thumbnailBlob = await makeImageThumb(file).catch(() => null);
+    else media.thumbnailBlob = await makeVideoThumb(file).catch(() => null);
+    await dbPut('media', media);
+    s.mediaIds.push(media.id);
+  }
+  await saveStop(s);
+  renderMediaGrid(s);
+}
+
+function makeImageThumb(file, maxDim = 320) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+function makeVideoThumb(file, maxDim = 320) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    video.muted = true;
+    video.playsInline = true;
+    const cleanup = () => URL.revokeObjectURL(url);
+    video.onloadeddata = () => { video.currentTime = Math.min(0.5, (video.duration || 1) / 2); };
+    video.onseeked = () => {
+      try {
+        const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        cleanup();
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.75);
+      } catch (err) { cleanup(); reject(err); }
+    };
+    video.onerror = () => { cleanup(); reject(new Error('video load failed')); };
+    video.src = url;
+  });
+}
+
+async function renderMediaGrid(stop) {
+  const grid = $('media-grid');
+  grid.innerHTML = '';
+  for (const mid of stop.mediaIds) {
+    const media = await dbGet('media', mid);
+    if (!media) continue;
+    const cell = document.createElement('div');
+    cell.className = 'media-cell';
+    const img = document.createElement('img');
+    img.src = getMediaURL(media, true);
+    if (!media.thumbnailBlob && media.type === 'video') {
+      img.remove();
+      cell.style.background = '#333';
+    } else {
+      cell.appendChild(img);
+    }
+    if (media.type === 'video') {
+      const badge = document.createElement('div');
+      badge.className = 'vid-badge';
+      badge.textContent = '▶';
+      cell.appendChild(badge);
+    }
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '✕';
+    del.title = 'Remove';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      stop.mediaIds = stop.mediaIds.filter(x => x !== mid);
+      await dbDel('media', mid);
+      await saveStop(stop);
+      renderMediaGrid(stop);
+    });
+    cell.appendChild(del);
+    cell.addEventListener('click', () => openLightbox(media));
+    grid.appendChild(cell);
+  }
+}
+
+/* ---------- Links ---------- */
+function renderLinks(stop) {
+  const list = $('link-list');
+  list.innerHTML = '';
+  stop.links.forEach((url, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'link-chip';
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = url;
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.addEventListener('click', async () => {
+      stop.links.splice(idx, 1);
+      await saveStop(stop);
+      renderLinks(stop);
+    });
+    chip.append(a, del);
+    list.appendChild(chip);
+  });
+}
+
+$('btn-add-link').addEventListener('click', addLink);
+$('link-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addLink(); });
+async function addLink() {
+  const s = stops.find(x => x.id === selectedStopId);
+  const url = $('link-input').value.trim();
+  if (!s || !url) return;
+  try { new URL(url); } catch { toast('That doesn\'t look like a valid URL'); return; }
+  s.links.push(url);
+  $('link-input').value = '';
+  await saveStop(s);
+  renderLinks(s);
+}
+
+/* ---------- Lightbox ---------- */
+function openLightbox(media) {
+  const box = $('lightbox');
+  const content = $('lightbox-content');
+  content.innerHTML = '';
+  if (media.type === 'image') {
+    const img = document.createElement('img');
+    img.src = getMediaURL(media);
+    content.appendChild(img);
+  } else {
+    const v = document.createElement('video');
+    v.src = getMediaURL(media);
+    v.controls = true;
+    v.autoplay = true;
+    content.appendChild(v);
+  }
+  box.classList.add('open');
+}
+function closeLightbox() {
+  const v = $('lightbox-content').querySelector('video');
+  if (v) v.pause();
+  $('lightbox').classList.remove('open');
+}
+$('lightbox').addEventListener('click', (e) => {
+  if (e.target.id === 'lightbox' || e.target.classList.contains('close')) closeLightbox();
+});
+
+/* ============================== Search (Nominatim) ============================== */
+let searchDebounce = null;
+$('search-input').addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  const q = $('search-input').value.trim();
+  const box = $('search-results');
+  if (q.length < 3) { box.style.display = 'none'; return; }
+  searchDebounce = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`);
+      const results = await res.json();
+      box.innerHTML = '';
+      if (!results.length) { box.style.display = 'none'; return; }
+      for (const r of results) {
+        const row = document.createElement('div');
+        row.textContent = r.display_name;
+        row.addEventListener('click', async () => {
+          box.style.display = 'none';
+          $('search-input').value = '';
+          const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+          map.setView([lat, lng], 13);
+          await addStop(lat, lng, r.display_name.split(',')[0]);
+        });
+        box.appendChild(row);
+      }
+      box.style.display = 'block';
+    } catch { /* search failed silently */ }
+  }, 500);
+});
+document.addEventListener('click', (e) => {
+  if (!$('search-wrap').contains(e.target)) $('search-results').style.display = 'none';
+  if (!$('loc-search-wrap').contains(e.target) && e.target.id !== 'btn-change-loc') $('loc-results').style.display = 'none';
+});
+
+/* ============================== Export / Import ============================== */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+async function dataURLToBlob(dataURL) {
+  const res = await fetch(dataURL);
+  return res.blob();
+}
+
+$('btn-export').addEventListener('click', async () => {
+  toast('Preparing export…');
+  const mediaOut = [];
+  for (const s of stops) {
+    for (const mid of s.mediaIds) {
+      const m = await dbGet('media', mid);
+      if (!m) continue;
+      mediaOut.push({
+        id: m.id, stopId: m.stopId, type: m.type, name: m.name,
+        blob: await blobToBase64(m.blob),
+        thumbnailBlob: m.thumbnailBlob ? await blobToBase64(m.thumbnailBlob) : null
+      });
+    }
+  }
+  const payload = {
+    format: 'trip-memories-v1',
+    exportedAt: new Date().toISOString(),
+    trip: currentTrip,
+    stops,
+    media: mediaOut
+  };
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${currentTrip.name.replace(/[^\w\- ]/g, '')}.trip.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Exported "${currentTrip.name}" (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+});
+
+$('btn-import').addEventListener('click', () => $('import-input').click());
+$('import-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    if (payload.format !== 'trip-memories-v1') throw new Error('Not a trip export file');
+    const tripId = uid();
+    const stopIdMap = new Map();
+    const trip = { id: tripId, name: payload.trip.name + ' (imported)', createdAt: Date.now(), stopOrder: [] };
+    for (const s of payload.stops) stopIdMap.set(s.id, uid());
+    const mediaIdMap = new Map();
+    for (const m of payload.media) mediaIdMap.set(m.id, uid());
+
+    for (const s of payload.stops) {
+      const ns = {
+        ...s,
+        id: stopIdMap.get(s.id),
+        tripId,
+        dateEnd: s.dateEnd || '',
+        mediaIds: (s.mediaIds || []).map(id => mediaIdMap.get(id)).filter(Boolean),
+        links: s.links || []
+      };
+      await dbPut('stops', ns);
+    }
+    trip.stopOrder = (payload.trip.stopOrder || payload.stops.map(s => s.id)).map(id => stopIdMap.get(id)).filter(Boolean);
+    for (const m of payload.media) {
+      await dbPut('media', {
+        id: mediaIdMap.get(m.id),
+        stopId: stopIdMap.get(m.stopId),
+        type: m.type, name: m.name,
+        blob: await dataURLToBlob(m.blob),
+        thumbnailBlob: m.thumbnailBlob ? await dataURLToBlob(m.thumbnailBlob) : null
+      });
+    }
+    await dbPut('trips', trip);
+    await renderCover();
+    toast(`Imported "${trip.name}" ✓`);
+  } catch (err) {
+    toast('Import failed: ' + err.message, 4000);
+  }
+});
+
+/* ============================== Keyboard ============================== */
+document.addEventListener('keydown', (e) => {
+  if ($('lightbox').classList.contains('open')) {
+    if (e.key === 'Escape') closeLightbox();
+    return;
+  }
+  if (turning) return;
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
+  if (activePage === 'page-stop') {
+    if (e.key === 'Escape' && !typing) backToTrip();
+    if (!typing && e.key === 'ArrowLeft') openStop(currentStopIndex - 1, 'back');
+    if (!typing && e.key === 'ArrowRight') openStop(currentStopIndex + 1, 'forward');
+  } else if (activePage === 'page-trip') {
+    if (e.key === 'Escape' && !typing) goCover();
+  }
+});
+
+/* ============================== Init ============================== */
+(async function init() {
+  try {
+    db = await openDB();
+    const trips = await dbAll('trips');
+    if (trips.length === 0) {
+      await dbPut('trips', { id: uid(), name: 'My Trip', createdAt: Date.now(), stopOrder: [] });
+    }
+    await renderCover();
+  } catch (err) {
+    alert('Could not open local storage (IndexedDB): ' + err.message +
+      '\n\nIf you opened this file directly, try serving it with a local server, or use Chrome.');
+  }
+})();
+</script>
+</body>
+</html>
